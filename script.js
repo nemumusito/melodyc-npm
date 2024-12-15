@@ -83,57 +83,101 @@ async function optimizeAudioContext() {
 // 音源の初期化
 async function initializeInstrument(audioContext, instrumentName) {
     try {
-        console.log(`Loading instrument: ${instrumentName}`);
+        console.log(`Starting initialization for instrument: ${instrumentName}`);
+        console.log('AudioContext state:', audioContext.state);
         
         // 既存の音源を切断
         if (currentInstrument) {
             console.log('Disconnecting old instrument');
             try {
                 currentInstrument.disconnect();
-                await new Promise(resolve => setTimeout(resolve, 100)); // 切断の完了を待機
+                await new Promise(resolve => setTimeout(resolve, 300)); // 切断の完了を待機時間を増加
             } catch (error) {
                 console.warn('Error disconnecting old instrument:', error);
-            }
+												}
+								}
+
+        // オーディオコンテキストの状態確認
+        if (audioContext.state !== 'running') {
+            console.log('Resuming AudioContext...');
+            await audioContext.resume();
+            await new Promise(resolve => setTimeout(resolve, 100));
+            if (audioContext.state !== 'running') {
+                throw new Error('オーディオコンテキストの開始に失敗しました');
+												}
 								}
 
         // 新しい音源をロード
-        const instrument = await Soundfont.instrument(audioContext, instrumentName, {
+        console.log('Creating new instrument...');
+        const soundfontOptions = {
             soundfont: 'MusyngKite',
             format: 'mp3',
             nameToUrl: (name, soundfont, format) => {
                 const fixedName = name.replace(/_/g, '-');
-                return `https://gleitz.github.io/midi-js-soundfonts/${soundfont}/${fixedName}-${format}.js`;
+																const url = `https://gleitz.github.io/midi-js-soundfonts/${soundfont}/${fixedName}-${format}.js`;
+                console.log('Loading soundfont from:', url);
+                return url;
             }
-								});
+        };
 
-        // 音源の出力をアナライザーに接続
-        try {
-            instrument.connect(analyser);
-            console.log('Audio routing completed');
-            
-            // 接続確認のためのテスト音を再生（無音）
-            await instrument.play('C4', 0, { gain: 0.01, duration: 0.1 });
-            console.log('Audio routing verified');
+        const instrument = await Soundfont.instrument(audioContext, instrumentName, soundfontOptions)
+            .catch(error => {
+																console.error('Soundfont loading error:', error);
+																throw new Error(`音源のロードに失敗しました: ${error.message}`);
+												});
+
+								if (!instrument) {
+												throw new Error('音源の初期化に失敗しました');
+								}
+
+								console.log('Instrument created, setting up audio routing...');
+
+								// 音源の出力をアナライザーに接続
+								try {
+												await new Promise(resolve => setTimeout(resolve, 200)); // 初期化完了を待機
+												instrument.connect(analyser);
+												console.log('Audio routing to analyzer completed');
+												
+												// 接続確認のためのテスト音を再生（無音）
+												const testNote = await instrument.play('C4', 0, { gain: 0.01, duration: 0.1 });
+												if (!testNote) {
+																throw new Error('テスト音の生成に失敗しました');
+												}
+												console.log('Audio routing verified with test note');
 								} catch (error) {
-            console.error('Error connecting instrument to analyser:', error);
-            try {
-                // アナライザーへの接続に失敗した場合、直接出力に接続を試みる
-                instrument.disconnect();
-                instrument.connect(audioContext.destination);
-                await instrument.play('C4', 0, { gain: 0.01, duration: 0.1 });
-                console.log('Direct audio routing successful');
+												console.error('Error connecting to analyzer:', error);
+												try {
+																console.log('Attempting direct audio routing...');
+																instrument.disconnect();
+																await new Promise(resolve => setTimeout(resolve, 200));
+																instrument.connect(audioContext.destination);
+																const testNote = await instrument.play('C4', 0, { gain: 0.01, duration: 0.1 });
+																if (!testNote) {
+																				throw new Error('テスト音の生成に失敗しました');
+																}
+																console.log('Direct audio routing successful');
 												} catch (secondError) {
-																console.error('Failed to establish audio routing:', secondError);
-																throw new Error('音源の接続に失敗しました');
+																console.error('Failed to establish any audio routing:', secondError);
+																throw new Error('音源の接続に失敗しました。オーディオシステムを確認してください。');
 												}
 								}
 
-								console.log(`Instrument ${instrumentName} loaded successfully`);
+								// 最終確認
+								try {
+												const audioTest = await instrument.play('C4', 0, { gain: 0 });
+												await audioTest.stop();
+												console.log('Final audio test passed');
+								} catch (error) {
+												console.error('Final audio test failed:', error);
+												throw new Error('音源の動作確認に失敗しました');
+								}
+
+								console.log(`Instrument ${instrumentName} loaded and connected successfully`);
 								return instrument;
 				} catch (error) {
-								console.error(`Failed to load instrument: ${instrumentName}`, error);
+								console.error(`Failed to initialize instrument: ${instrumentName}`, error);
 								console.error('Detailed error:', error.message);
-								throw error;
+								throw new Error(`音源の初期化に失敗しました: ${error.message}`);
 				}
 }
 
@@ -294,11 +338,13 @@ function setupMIDIEvents(input) {
 function setupInstrumentSelection() {
     const soundTypeSelect = document.getElementById('soundType');
 				let isChanging = false;
+				let retryCount = 0;
+    const MAX_RETRIES = 2;
 
     soundTypeSelect.addEventListener('change', async (e) => {
         if (isChanging) {
             console.log('音源切り替え処理が進行中です');
-            return;
+												return;
         }
 
         const selectedInstrument = e.target.value;
@@ -307,6 +353,8 @@ function setupInstrumentSelection() {
         
         try {
             isChanging = true;
+            retryCount = 0;
+
             // UI要素を無効化
             loadingIndicator.disabled = true;
             loadingIndicator.style.opacity = '0.5';
@@ -325,43 +373,91 @@ function setupInstrumentSelection() {
                 }
             });
             activeNotes.clear();
-            
-            // オーディオコンテキストの状態確認と再開
-            if (audioContext.state === 'suspended') {
-                console.log('Resuming AudioContext...');
-                await audioContext.resume();
-                await new Promise(resolve => setTimeout(resolve, 100)); // 状態変更の完了を待機
-                
-                if (audioContext.state !== 'running') {
-                    throw new Error('オーディオコンテキストの再開に失敗しました');
+
+            // オーディオシステムのリセットと再初期化
+            async function resetAudioSystem() {
+                console.log('Resetting audio system...');
+                if (audioContext) {
+                    try {
+                        await audioContext.close();
+                    } catch (error) {
+                        console.warn('Error closing AudioContext:', error);
+                    }
                 }
-            }
-            
-            // 新しい音源を初期化
-            console.log('Initializing new instrument...');
-            const newInstrument = await initializeInstrument(audioContext, selectedInstrument);
-            
-            // 現在の音源を更新
-            currentInstrument = newInstrument;
-												console.log(`Successfully changed to ${selectedInstrument}`);
-												
+                audioContext = await optimizeAudioContext();
+                analyser = audioContext.createAnalyser();
+                analyser.fftSize = 2048;
+																dataArray = new Uint8Array(analyser.frequencyBinCount);
+																analyser.connect(audioContext.destination);
+																console.log('Audio system reset completed');
+												}
+
+												// 音源切り替えの実行（リトライ機能付き）
+												async function attemptInstrumentChange() {
+																while (retryCount < MAX_RETRIES) {
+																				try {
+																								if (retryCount > 0) {
+																												console.log(`Retry attempt ${retryCount + 1}/${MAX_RETRIES}`);
+																												await resetAudioSystem();
+																								}
+
+																								// オーディオコンテキストの状態確認と再開
+																								if (audioContext.state === 'suspended') {
+																												console.log('Resuming AudioContext...');
+																												await audioContext.resume();
+																												await new Promise(resolve => setTimeout(resolve, 200));
+																												
+																												if (audioContext.state !== 'running') {
+																																throw new Error('オーディオコンテキストの再開に失敗しました');
+																												}
+																								}
+
+																								// 新しい音源を初期化
+																								console.log('Initializing new instrument...');
+																								const newInstrument = await initializeInstrument(audioContext, selectedInstrument);
+																								
+																								// 現在の音源を更新
+																								currentInstrument = newInstrument;
+																								console.log(`Successfully changed to ${selectedInstrument}`);
+																								return true;
+
+																				} catch (error) {
+																								console.error(`Attempt ${retryCount + 1} failed:`, error);
+																								retryCount++;
+																								if (retryCount >= MAX_RETRIES) {
+																												throw error;
+																								}
+																								await new Promise(resolve => setTimeout(resolve, 500)); // リトライ前の待機
+																				}
+																}
+																return false;
+												}
+
+												// 音源切り替えの実行
+												const success = await attemptInstrumentChange();
+												if (!success) {
+																throw new Error('音源の切り替えに失敗しました');
+												}
+
 								} catch (error) {
 												console.error(`Instrument change failed:`, error);
 												// エラー時は選択を元に戻す
 												soundTypeSelect.value = originalValue;
-												alert(`音源の切り替えに失敗しました。\nエラー: ${error.message}\n\nページを更新して再度お試しください。`);
 												
-												// オーディオコンテキストのリセットを試みる
+												let errorMessage = '音源の切り替えに失敗しました。\n';
+												errorMessage += `エラー: ${error.message}\n\n`;
+												errorMessage += 'お手数ですが、以下をお試しください：\n';
+												errorMessage += '1. ページを更新する\n';
+												errorMessage += '2. ブラウザのオーディオ設定を確認する\n';
+												errorMessage += '3. 別の音源を選択してみる';
+												
+												alert(errorMessage);
+												
+												// オーディオシステムの復旧を試みる
 												try {
-																await audioContext.close();
-																audioContext = await optimizeAudioContext();
-																analyser = audioContext.createAnalyser();
-																analyser.fftSize = 2048;
-																dataArray = new Uint8Array(analyser.frequencyBinCount);
-																analyser.connect(audioContext.destination);
-																console.log('AudioContext reset completed');
+																await resetAudioSystem();
 												} catch (resetError) {
-																console.error('Failed to reset AudioContext:', resetError);
+																console.error('Failed to recover audio system:', resetError);
 												}
 								} finally {
 												// UI要素を再有効化
