@@ -4,10 +4,15 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>MIDI Piano</title>
+    <!-- セキュリティポリシーの設定 -->
+    <meta http-equiv="Cross-Origin-Opener-Policy" content="same-origin">
+    <meta http-equiv="Cross-Origin-Embedder-Policy" content="require-corp">
+    <!-- スタイルシートの読み込み -->
     <link rel="stylesheet" href="style.css">
-    <script src="https://cdn.jsdelivr.net/npm/webmidi@3.1.7/dist/iife/webmidi.iife.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/tone@14.7.77/build/Tone.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/soundfont-player@0.12.0/dist/soundfont-player.min.js"></script>
+    <!-- 外部ライブラリの読み込み -->
+    <script src="https://cdn.jsdelivr.net/npm/webmidi@3.1.7/dist/iife/webmidi.iife.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/tone@14.7.77/build/Tone.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/soundfont-player@0.12.0/dist/soundfont-player.min.js" crossorigin="anonymous"></script>
 </head>
 <body>
     <canvas id="visualizer"></canvas>
@@ -99,6 +104,7 @@
             </div>
         </div>
     </div>
-    <script src="script.js"></script>
+    <!-- メインスクリプトの読み込み -->
+    <script src="script.js" type="module" defer></script>
 </body>
 </html>

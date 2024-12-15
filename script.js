@@ -535,14 +535,43 @@ function setupMIDIDeviceSelection() {
 // アプリケーションの初期化
 async function initializeApp() {
     try {
-        // WebMIDIの初期化
-        await WebMidi.enable({ sysex: true });
-        console.log("WebMidi enabled successfully!");
-        console.log("Available MIDI devices:", WebMidi.inputs.map(input => input.name));
+        // WebMIDIの初期化（リトライロジック付き）
+        let retryCount = 0;
+        const maxRetries = 3;
         
-        // オーディオコンテキストの初期化
-        audioContext = new (window.AudioContext || window.webkitAudioContext)();
-        console.log("AudioContext created:", audioContext.state);
+        while (retryCount < maxRetries) {
+            try {
+                await WebMidi.enable({ sysex: true, software: true });
+                console.log("WebMidi enabled successfully!");
+                console.log("Available MIDI devices:", WebMidi.inputs.map(input => input.name));
+                break;
+            } catch (error) {
+                console.warn(`WebMIDI initialization attempt ${retryCount + 1} failed:`, error);
+                retryCount++;
+                if (retryCount === maxRetries) {
+                    console.error("WebMIDI initialization failed after all attempts");
+                    // エラーを投げずに続行（MIDIデバイスがなくてもピアノは使える）
+                }
+                await new Promise(resolve => setTimeout(resolve, 1000));
+            }
+        }
+
+        // オーディオコンテキストの初期化（リトライロジック付き）
+        retryCount = 0;
+        while (retryCount < maxRetries) {
+            try {
+                audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                console.log("AudioContext created:", audioContext.state);
+                break;
+            } catch (error) {
+                console.warn(`AudioContext initialization attempt ${retryCount + 1} failed:`, error);
+                retryCount++;
+                if (retryCount === maxRetries) {
+                    throw new Error("オーディオシステムの初期化に失敗しました");
+                }
+                await new Promise(resolve => setTimeout(resolve, 1000));
+            }
+        }
         
         // ���ーザーインタラクションを待つ
         if (audioContext.state === 'suspended') {
@@ -563,23 +592,53 @@ async function initializeApp() {
         dataArray = new Uint8Array(analyser.frequencyBinCount);
         analyser.connect(audioContext.destination);
         
-        // Soundfontの初期化を試行
+        // Soundfontの初期化を試行（リトライロジック付き）
         console.log("Loading initial instrument...");
-        try {
-            currentInstrument = await Soundfont.instrument(audioContext, 'acoustic_grand_piano', {
-                soundfont: 'MusyngKite',
-                format: 'mp3'
-            });
-            currentInstrument.connect(analyser);
-            console.log("Initial instrument loaded successfully");
-            
-            // 無音のテスト音を鳴らして接続を確認
-            await currentInstrument.play('C4', 0, { gain: 0.01, duration: 0.1 });
-            console.log("Audio routing verified");
-        } catch (error) {
-            console.error("Failed to load initial instrument:", error);
-            alert('初期音源の読み込みに失敗しました。ページを更新してもう一度お試しください。');
-            throw error;
+        retryCount = 0;
+        while (retryCount < maxRetries) {
+            try {
+                currentInstrument = await Soundfont.instrument(audioContext, 'acoustic_grand_piano', {
+                    soundfont: 'MusyngKite',
+                    format: 'mp3',
+                    nameToUrl: (name, soundfont, format) => {
+                        const fixedName = name.replace(/_/g, '-');
+                        return `https://gleitz.github.io/midi-js-soundfonts/${soundfont}/${fixedName}-${format}.js`;
+                    }
+                });
+
+                // アナライザーの初期化
+                analyser = audioContext.createAnalyser();
+                analyser.fftSize = 2048;
+                dataArray = new Uint8Array(analyser.frequencyBinCount);
+                analyser.connect(audioContext.destination);
+
+                // 音源をアナライザーに接続
+                currentInstrument.connect(analyser);
+                console.log("Initial instrument loaded and connected successfully");
+                
+                // 無音のテスト音を鳴らして接続を確認
+                const testNote = await currentInstrument.play('C4', 0, { gain: 0.01, duration: 0.1 });
+                if (testNote) {
+                    console.log("Audio routing verified");
+                    break;
+                }
+            } catch (error) {
+                console.warn(`Soundfont initialization attempt ${retryCount + 1} failed:`, error);
+                retryCount++;
+                if (retryCount === maxRetries) {
+                    console.error("Failed to load initial instrument after all attempts:", error);
+                    // エラーメッセージを表示するが、続行を許可
+                    const errorMessage =
+                        '音源の読み込みに失敗しました。\n' +
+                        'お手数ですが、以下をお試しください：\n' +
+                        '1. ページを更新する\n' +
+                        '2. 別のブラウザで試す\n' +
+                        '3. インターネット接続を確認する';
+                    alert(errorMessage);
+                    break;
+                }
+                await new Promise(resolve => setTimeout(resolve, 1000));
+            }
         }
         
         // 各種セットアップ
