@@ -535,10 +535,20 @@ function setupMIDIDeviceSelection() {
 // アプリケーションの初期化
 async function initializeApp() {
     try {
-        // セキュリティチェック
+        // セキュリティチェックとホスト情報の取得
         const isSecureContext = window.isSecureContext;
         const protocol = window.location.protocol;
-        console.log("Security Context:", { isSecure: isSecureContext, protocol });
+        const hostname = window.location.hostname;
+								const isLocalhost = ['localhost', '127.0.0.1'].includes(hostname);
+        const isLocalNetwork = hostname.startsWith('192.168.') || hostname.startsWith('10.') || hostname.startsWith('172.');
+        
+        console.log("Environment Context:", {
+            isSecure: isSecureContext,
+            protocol,
+            hostname,
+            isLocalhost,
+            isLocalNetwork
+        });
 
         // WebMIDIの初期化（リトライロジック付き）
         let retryCount = 0;
@@ -546,16 +556,26 @@ async function initializeApp() {
         
         while (retryCount < maxRetries) {
             try {
-                if (!isSecureContext && protocol !== 'https:' && !window.location.hostname.includes('localhost')) {
-                    console.warn("Insecure context detected. MIDI access may be restricted.");
+                // ローカル環境での特別な処理
+                if (isLocalhost || isLocalNetwork) {
+                    console.log("Local development environment detected");
+                    if (!isSecureContext && protocol !== 'https:') {
+                        console.warn("Local non-secure context, attempting MIDI access anyway");
+                    }
+                }
+                // 本番環境でのセキュリティチェック
+                else if (!isSecureContext && protocol !== 'https:') {
+                    console.warn("Production non-secure context detected. MIDI access will be restricted.");
                     document.querySelector('.controls').insertAdjacentHTML('afterbegin',
                         '<div class="error-message" style="color: #ff4444; margin-bottom: 10px;">' +
-                        'セキュアな接続（HTTPS）でないため、MIDIデバイスへのアクセスが制限される可能性があります。' +
+                        'セキュアな接続（HTTPS）でないため、MIDIデバイスへのアクセスが制限されます。<br>' +
+                        'HTTPSでアクセスしてください。' +
                         '</div>'
                     );
                 }
 
-                await WebMidi.enable({
+                // WebMIDI初期化オプション
+                const enableOptions = {
                     sysex: true,
                     software: true,
                     callback: error => {
@@ -564,13 +584,50 @@ async function initializeApp() {
                             throw error;
                         }
                     }
-                });
-                
-                console.log("WebMidi enabled successfully!");
+                };
+
+                // ローカル環境での特別な初期化処理
+                if (isLocalhost || isLocalNetwork) {
+                    try {
+                        await WebMidi.enable(enableOptions);
+                        console.log("WebMidi enabled successfully in local environment!");
+                    } catch (localError) {
+                        console.warn("Local MIDI initialization failed, trying alternative method:", localError);
+                        // 代替の初期化方法を試行
+                        await new Promise((resolve, reject) => {
+                            navigator.requestMIDIAccess({ sysex: true })
+                                .then(midiAccess => {
+                                    console.log("Alternative MIDI access granted");
+                                    resolve();
+                                })
+                                .catch(err => {
+                                    console.error("Alternative MIDI access failed:", err);
+                                    reject(err);
+                                });
+                        });
+                    }
+                } else {
+                    // 本番環境での通常の初期化
+                    await WebMidi.enable(enableOptions);
+                    console.log("WebMidi enabled successfully in production environment!");
+                }
+
+                // MIDI デバイスの確認
                 if (WebMidi.inputs.length > 0) {
-                    console.log("Available MIDI devices:", WebMidi.inputs.map(input => input.name));
+                    console.log("Available MIDI devices:", WebMidi.inputs.map(input => ({
+                        name: input.name,
+                        manufacturer: input.manufacturer,
+                        state: input.state,
+                        connection: input.connection
+                    })));
                 } else {
                     console.log("No MIDI devices found");
+                    document.querySelector('.controls').insertAdjacentHTML('afterbegin',
+                        '<div class="info-message" style="color: #ffaa00; margin-bottom: 10px;">' +
+                        'MIDIデバイスが検出されませんでした。<br>' +
+                        'デバイスを接続してページを更新してください。' +
+                        '</div>'
+                    );
                 }
                 break;
             } catch (error) {

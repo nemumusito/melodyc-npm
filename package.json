@@ -4,8 +4,7 @@
   "type": "module",
   "main": "index.js",
   "scripts": {
-    "dev": "npx serve . --ssl-cert ./cert.pem --ssl-key ./key.pem",
-    "dev:setup": "openssl req -x509 -newkey rsa:2048 -keyout key.pem -out cert.pem -days 365 -nodes -subj '/CN=localhost'",
+    "dev": "http-server . -p 8080 --cors='*' -c-1 -o",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],
@@ -18,6 +17,6 @@
     "soundfont-player": "^0.12.0"
   },
   "devDependencies": {
-    "serve": "^14.2.1"
+    "http-server": "^14.1.1"
   }
 }
