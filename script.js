@@ -535,22 +535,57 @@ function setupMIDIDeviceSelection() {
 // アプリケーションの初期化
 async function initializeApp() {
     try {
+        // セキュリティチェック
+        const isSecureContext = window.isSecureContext;
+        const protocol = window.location.protocol;
+        console.log("Security Context:", { isSecure: isSecureContext, protocol });
+
         // WebMIDIの初期化（リトライロジック付き）
         let retryCount = 0;
         const maxRetries = 3;
         
         while (retryCount < maxRetries) {
             try {
-                await WebMidi.enable({ sysex: true, software: true });
+                if (!isSecureContext && protocol !== 'https:' && !window.location.hostname.includes('localhost')) {
+                    console.warn("Insecure context detected. MIDI access may be restricted.");
+                    document.querySelector('.controls').insertAdjacentHTML('afterbegin',
+                        '<div class="error-message" style="color: #ff4444; margin-bottom: 10px;">' +
+                        'セキュアな接続（HTTPS）でないため、MIDIデバイスへのアクセスが制限される可能性があります。' +
+                        '</div>'
+                    );
+                }
+
+                await WebMidi.enable({
+                    sysex: true,
+                    software: true,
+                    callback: error => {
+                        if (error) {
+                            console.error("WebMidi callback error:", error);
+                            throw error;
+                        }
+                    }
+                });
+                
                 console.log("WebMidi enabled successfully!");
-                console.log("Available MIDI devices:", WebMidi.inputs.map(input => input.name));
+                if (WebMidi.inputs.length > 0) {
+                    console.log("Available MIDI devices:", WebMidi.inputs.map(input => input.name));
+                } else {
+                    console.log("No MIDI devices found");
+                }
                 break;
             } catch (error) {
                 console.warn(`WebMIDI initialization attempt ${retryCount + 1} failed:`, error);
                 retryCount++;
                 if (retryCount === maxRetries) {
                     console.error("WebMIDI initialization failed after all attempts");
-                    // エラーを投げずに続行（MIDIデバイスがなくてもピアノは使える）
+                    document.querySelector('.controls').insertAdjacentHTML('afterbegin',
+                        '<div class="error-message" style="color: #ff4444; margin-bottom: 10px;">' +
+                        'MIDIデバイスの初期化に失敗しました。以下をご確認ください：<br>' +
+                        '1. ブラウザがWebMIDI APIをサポートしているか<br>' +
+                        '2. MIDIデバイスが正しく接続されているか<br>' +
+                        '3. セキュアな接続（HTTPS）を使用しているか' +
+                        '</div>'
+                    );
                 }
                 await new Promise(resolve => setTimeout(resolve, 1000));
             }
