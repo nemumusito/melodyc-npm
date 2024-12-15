@@ -7,32 +7,87 @@
     <link rel="stylesheet" href="style.css">
     <script src="https://cdn.jsdelivr.net/npm/webmidi@3.1.7/dist/iife/webmidi.iife.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/tone@14.7.77/build/Tone.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@tonejs/piano@0.2.1/dist/Piano.js"></script>
 </head>
 <body>
     <canvas id="visualizer"></canvas>
     <div class="container">
         <h1>MIDI Piano</h1>
         <div class="controls">
-            <select id="midiInput" class="midi-select">
-                <option value="">MIDIデバイスを選択してください</option>
-            </select>
+            <div class="control-group">
+                <label for="midiInput">MIDIデバイス:</label>
+                <select id="midiInput" class="midi-select">
+                    <option value="">MIDIデバイスを選択してください</option>
+                </select>
+            </div>
+            <div class="control-group">
+                <label for="soundType">音源:</label>
+                <select id="soundType" class="sound-select">
+                    <option value="piano">グランドピアノ</option>
+                    <option value="synth">シンセサイザー</option>
+                    <option value="electric">エレクトリックピアノ</option>
+                </select>
+            </div>
         </div>
         <div class="piano">
             <div class="keys">
-                <!-- 1オクターブ分のキーを表示 -->
-                <div class="key white" data-note="C4"><span>C</span></div>
-                <div class="key black" data-note="C#4"><span>C#</span></div>
-                <div class="key white" data-note="D4"><span>D</span></div>
-                <div class="key black" data-note="D#4"><span>D#</span></div>
-                <div class="key white" data-note="E4"><span>E</span></div>
-                <div class="key white" data-note="F4"><span>F</span></div>
-                <div class="key black" data-note="F#4"><span>F#</span></div>
-                <div class="key white" data-note="G4"><span>G</span></div>
-                <div class="key black" data-note="G#4"><span>G#</span></div>
-                <div class="key white" data-note="A4"><span>A</span></div>
-                <div class="key black" data-note="A#4"><span>A#</span></div>
-                <div class="key white" data-note="B4"><span>B</span></div>
+                <!-- 52鍵盤 (C2-E6) -->
+                <div class="key white" data-note="C2"><span>C2</span></div>
+                <div class="key black" data-note="C#2"><span>C#2</span></div>
+                <div class="key white" data-note="D2"><span>D2</span></div>
+                <div class="key black" data-note="D#2"><span>D#2</span></div>
+                <div class="key white" data-note="E2"><span>E2</span></div>
+                <div class="key white" data-note="F2"><span>F2</span></div>
+                <div class="key black" data-note="F#2"><span>F#2</span></div>
+                <div class="key white" data-note="G2"><span>G2</span></div>
+                <div class="key black" data-note="G#2"><span>G#2</span></div>
+                <div class="key white" data-note="A2"><span>A2</span></div>
+                <div class="key black" data-note="A#2"><span>A#2</span></div>
+                <div class="key white" data-note="B2"><span>B2</span></div>
+                
+                <div class="key white" data-note="C3"><span>C3</span></div>
+                <div class="key black" data-note="C#3"><span>C#3</span></div>
+                <div class="key white" data-note="D3"><span>D3</span></div>
+                <div class="key black" data-note="D#3"><span>D#3</span></div>
+                <div class="key white" data-note="E3"><span>E3</span></div>
+                <div class="key white" data-note="F3"><span>F3</span></div>
+                <div class="key black" data-note="F#3"><span>F#3</span></div>
+                <div class="key white" data-note="G3"><span>G3</span></div>
+                <div class="key black" data-note="G#3"><span>G#3</span></div>
+                <div class="key white" data-note="A3"><span>A3</span></div>
+                <div class="key black" data-note="A#3"><span>A#3</span></div>
+                <div class="key white" data-note="B3"><span>B3</span></div>
+
+                <div class="key white" data-note="C4"><span>C4</span></div>
+                <div class="key black" data-note="C#4"><span>C#4</span></div>
+                <div class="key white" data-note="D4"><span>D4</span></div>
+                <div class="key black" data-note="D#4"><span>D#4</span></div>
+                <div class="key white" data-note="E4"><span>E4</span></div>
+                <div class="key white" data-note="F4"><span>F4</span></div>
+                <div class="key black" data-note="F#4"><span>F#4</span></div>
+                <div class="key white" data-note="G4"><span>G4</span></div>
+                <div class="key black" data-note="G#4"><span>G#4</span></div>
+                <div class="key white" data-note="A4"><span>A4</span></div>
+                <div class="key black" data-note="A#4"><span>A#4</span></div>
+                <div class="key white" data-note="B4"><span>B4</span></div>
+
+                <div class="key white" data-note="C5"><span>C5</span></div>
+                <div class="key black" data-note="C#5"><span>C#5</span></div>
+                <div class="key white" data-note="D5"><span>D5</span></div>
+                <div class="key black" data-note="D#5"><span>D#5</span></div>
+                <div class="key white" data-note="E5"><span>E5</span></div>
+                <div class="key white" data-note="F5"><span>F5</span></div>
+                <div class="key black" data-note="F#5"><span>F#5</span></div>
+                <div class="key white" data-note="G5"><span>G5</span></div>
+                <div class="key black" data-note="G#5"><span>G#5</span></div>
+                <div class="key white" data-note="A5"><span>A5</span></div>
+                <div class="key black" data-note="A#5"><span>A#5</span></div>
+                <div class="key white" data-note="B5"><span>B5</span></div>
+
+                <div class="key white" data-note="C6"><span>C6</span></div>
+                <div class="key black" data-note="C#6"><span>C#6</span></div>
+                <div class="key white" data-note="D6"><span>D6</span></div>
+                <div class="key black" data-note="D#6"><span>D#6</span></div>
+                <div class="key white" data-note="E6"><span>E6</span></div>
             </div>
         </div>
     </div>
