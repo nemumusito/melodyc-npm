@@ -52,6 +52,13 @@ body {
     min-width: 200px;
 }
 
+.midi-select option,
+.sound-select option {
+				background-color: #2a2a2a;
+				color: #fff;
+				padding: 8px;
+}
+
 .piano {
     background: rgba(26, 26, 26, 0.8);
     padding: 20px;
