@@ -1,25 +1,67 @@
 import * as WebMidi from "webmidi";
 import * as Tone from "tone";
 
-WebMidi.enable()
-  .then(() => {
-    if (WebMidi.inputs.length > 0) {
-      const input = WebMidi.inputs[0];
-      const synth = new Tone.Synth().toDestination();
+// MIDIデバイスの選択肢を更新する関数
+function updateMIDIInputs() {
+    const select = document.getElementById('midiInput');
+    select.innerHTML = '<option value="">MIDIデバイスを選択してください</option>';
+    
+    WebMidi.inputs.forEach(input => {
+        const option = document.createElement('option');
+        option.value = input.id;
+        option.textContent = input.name;
+        select.appendChild(option);
+    });
+}
 
-      input.addListener("noteon", (e) => {
-        const note = WebMidi.MIDIUtils.noteNumberToName(e.note.number);
-        synth.triggerAttack(note);
-      });
-
-      input.addListener("noteoff", (e) => {
-        const note = WebMidi.MIDIUtils.noteNumberToName(e.note.number);
-        synth.triggerRelease(note);
-      });
-    } else {
-      console.log("No MIDI input devices detected.");
+// キーの見た目を更新する関数
+function updateKeyVisual(note, isPressed) {
+    const keyElement = document.querySelector(`[data-note="${note}"]`);
+    if (keyElement) {
+        if (isPressed) {
+            keyElement.classList.add('active');
+        } else {
+            keyElement.classList.remove('active');
+        }
     }
-  })
-  .catch((err) => {
-    console.log("WebMidi could not be enabled.", err);
-  });
+}
+
+// MIDIデバイスのセットアップ
+WebMidi.enable()
+    .then(() => {
+        // 初期のMIDIデバイス一覧を表示
+        updateMIDIInputs();
+
+        const synth = new Tone.Synth().toDestination();
+        let currentInput = null;
+
+        // MIDIデバイスの選択が変更されたときの処理
+        document.getElementById('midiInput').addEventListener('change', (e) => {
+            if (currentInput) {
+                currentInput.removeListener();
+            }
+
+            const selectedId = e.target.value;
+            if (selectedId) {
+                currentInput = WebMidi.getInputById(selectedId);
+                
+                // Note ONイベントのリスナー
+                currentInput.addListener("noteon", (e) => {
+                    const note = e.note.identifier; // 例: "C4"
+                    synth.triggerAttack(note);
+                    updateKeyVisual(note, true);
+                });
+
+                // Note OFFイベントのリスナー
+                currentInput.addListener("noteoff", (e) => {
+                    const note = e.note.identifier;
+                    synth.triggerRelease();
+                    updateKeyVisual(note, false);
+                });
+            }
+        });
+    })
+    .catch(err => {
+        console.error("WebMidi could not be enabled.", err);
+        document.body.innerHTML += '<p class="error">MIDIデバイスの接続に失敗しました。</p>';
+    });

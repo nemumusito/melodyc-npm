@@ -7,7 +7,31 @@
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
-    <h1>MIDI Piano</h1>
+    <div class="container">
+        <h1>MIDI Piano</h1>
+        <div class="controls">
+            <select id="midiInput" class="midi-select">
+                <option value="">MIDIデバイスを選択してください</option>
+            </select>
+        </div>
+        <div class="piano">
+            <div class="keys">
+                <!-- 1オクターブ分のキーを表示 -->
+                <div class="key white" data-note="C4"><span>C</span></div>
+                <div class="key black" data-note="C#4"><span>C#</span></div>
+                <div class="key white" data-note="D4"><span>D</span></div>
+                <div class="key black" data-note="D#4"><span>D#</span></div>
+                <div class="key white" data-note="E4"><span>E</span></div>
+                <div class="key white" data-note="F4"><span>F</span></div>
+                <div class="key black" data-note="F#4"><span>F#</span></div>
+                <div class="key white" data-note="G4"><span>G</span></div>
+                <div class="key black" data-note="G#4"><span>G#</span></div>
+                <div class="key white" data-note="A4"><span>A</span></div>
+                <div class="key black" data-note="A#4"><span>A#</span></div>
+                <div class="key white" data-note="B4"><span>B</span></div>
+            </div>
+        </div>
+    </div>
     <script src="script.js"></script>
 </body>
 </html>
