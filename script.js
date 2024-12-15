@@ -75,22 +75,20 @@ WebMidi.enable()
 
         // Tone.jsの設定
         await Tone.start();
-        const piano = new Tone.Sampler({
-            urls: {
-                C4: "C4.mp3",
-                "D#4": "Ds4.mp3",
-                "F#4": "Fs4.mp3",
-                A4: "A4.mp3",
-            },
-            release: 1,
-            baseUrl: "https://tonejs.github.io/audio/salamander/",
+        const synth = new Tone.PolySynth(Tone.Synth, {
+            envelope: {
+                attack: 0.02,
+                decay: 0.1,
+                sustain: 0.3,
+                release: 1
+            }
         }).toDestination();
 
         // アナライザーの設定
         analyser = Tone.getContext().createAnalyser();
         analyser.fftSize = 2048;
         dataArray = new Uint8Array(analyser.frequencyBinCount);
-        piano.connect(analyser);
+        synth.connect(analyser);
 
         // ビジュアライザーの開始
         drawVisualizer();
@@ -110,14 +108,15 @@ WebMidi.enable()
                 // Note ONイベントのリスナー
                 currentInput.addListener("noteon", (e) => {
                     const note = e.note.identifier;
-                    piano.triggerAttack(note);
+                    const velocity = e.note.velocity;
+                    synth.triggerAttack(note, Tone.now(), velocity);
                     updateKeyVisual(note, true);
                 });
 
                 // Note OFFイベントのリスナー
                 currentInput.addListener("noteoff", (e) => {
                     const note = e.note.identifier;
-                    piano.triggerRelease(note);
+                    synth.triggerRelease(note);
                     updateKeyVisual(note, false);
                 });
             }
