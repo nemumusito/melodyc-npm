@@ -67,9 +67,30 @@ function updateKeyVisual(note, isPressed) {
     }
 }
 
+// オーディオコンテキストの最適化設定
+async function optimizeAudioContext() {
+    // バッファサイズを小さくして遅延を減らす
+    const ctx = Tone.context;
+    await ctx.resume();
+    
+    // Web Audio APIの設定を最適化
+    const originalLatency = ctx.baseLatency || 0;
+    const lookahead = 0.01; // 10ms
+    
+    // Tone.jsの内部設定を最適化
+    Tone.context.lookAhead = lookahead;
+    Tone.context.updateInterval = 0.01; // 10ms
+    
+    console.log(`Audio latency: ${originalLatency * 1000}ms`);
+    console.log('Audio context optimized');
+}
+
 // MIDIデバイスのセットアップ
 WebMidi.enable()
     .then(async () => {
+        // オーディオコンテキストの最適化
+        await optimizeAudioContext();
+        
         // 初期のMIDIデバイス一覧を表示
         updateMIDIInputs();
 
@@ -113,6 +134,19 @@ WebMidi.enable()
             baseUrl: "https://tonejs.github.io/audio/salamander/",
             onload: () => {
                 console.log("Piano loaded successfully");
+                // 音源がロードされたら通知を表示
+                const notification = document.createElement('div');
+                notification.textContent = '音源のロードが完了しました';
+                notification.style.position = 'fixed';
+                notification.style.top = '20px';
+                notification.style.left = '50%';
+                notification.style.transform = 'translateX(-50%)';
+                notification.style.padding = '10px 20px';
+                notification.style.backgroundColor = 'rgba(0, 255, 0, 0.8)';
+                notification.style.borderRadius = '5px';
+                notification.style.zIndex = '1000';
+                document.body.appendChild(notification);
+                setTimeout(() => notification.remove(), 3000);
             }
         }).toDestination();
 
@@ -141,14 +175,15 @@ WebMidi.enable()
                 currentInput.addListener("noteon", (e) => {
                     const note = e.note.identifier;
                     const velocity = e.note.velocity;
-                    piano.triggerAttack(note, Tone.now(), velocity);
+                    // 即時に音を鳴らす
+                    piano.triggerAttack(note, '+0', velocity);
                     updateKeyVisual(note, true);
                 });
 
                 // Note OFFイベントのリスナー
                 currentInput.addListener("noteoff", (e) => {
                     const note = e.note.identifier;
-                    piano.triggerRelease(note);
+                    piano.triggerRelease(note, '+0');
                     updateKeyVisual(note, false);
                 });
             }
