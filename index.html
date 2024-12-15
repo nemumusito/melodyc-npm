@@ -7,6 +7,7 @@
     <link rel="stylesheet" href="style.css">
     <script src="https://cdn.jsdelivr.net/npm/webmidi@3.1.7/dist/iife/webmidi.iife.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/tone@14.7.77/build/Tone.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/soundfont-player@0.12.0/dist/soundfont-player.min.js"></script>
 </head>
 <body>
     <canvas id="visualizer"></canvas>
@@ -22,9 +23,16 @@
             <div class="control-group">
                 <label for="soundType">音源:</label>
                 <select id="soundType" class="sound-select">
-                    <option value="piano">グランドピアノ</option>
-                    <option value="synth">シンセサイザー</option>
-                    <option value="electric">エレクトリックピアノ</option>
+                    <option value="acoustic_grand_piano">グランドピアノ</option>
+                    <option value="bright_acoustic_piano">ブライトピアノ</option>
+                    <option value="electric_grand_piano">エレクトリックグランド</option>
+                    <option value="honkytonk_piano">ホンキートンク</option>
+                    <option value="electric_piano_1">エレクトリックピアノ1</option>
+                    <option value="electric_piano_2">エレクトリックピアノ2</option>
+                    <option value="harpsichord">ハープシコード</option>
+                    <option value="clavinet">クラビネット</option>
+                    <option value="celesta">チェレスタ</option>
+                    <option value="music_box">オルゴール</option>
                 </select>
             </div>
         </div>

@@ -69,97 +69,38 @@ function updateKeyVisual(note, isPressed) {
 
 // オーディオコンテキストの最適化設定
 async function optimizeAudioContext() {
-    const ctx = Tone.context;
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
     await ctx.resume();
-    
-    const originalLatency = ctx.baseLatency || 0;
-    const lookahead = 0.01;
-    
-    Tone.context.lookAhead = lookahead;
-    Tone.context.updateInterval = 0.01;
-    
-    console.log(`Audio latency: ${originalLatency * 1000}ms`);
-    console.log('Audio context optimized');
+    return ctx;
+}
+
+// 音源の初期化
+async function initializeInstrument(audioContext, instrumentName) {
+    try {
+        return await Soundfont.instrument(audioContext, instrumentName, {
+            soundfont: 'MusyngKite',
+            gain: 2.0
+        });
+    } catch (error) {
+        console.error(`Failed to load instrument: ${instrumentName}`, error);
+        throw error;
+    }
 }
 
 // MIDIデバイスのセットアップ
 WebMidi.enable()
     .then(async () => {
-        await optimizeAudioContext();
+        console.log("WebMidi enabled!");
         updateMIDIInputs();
-        await Tone.start();
-
-        // 音源の初期化
-        const piano = new Tone.Sampler({
-            urls: {
-                C2: "C2.mp3",
-                E2: "E2.mp3",
-                G2: "G2.mp3",
-                C3: "C3.mp3",
-                E3: "E3.mp3",
-                G3: "G3.mp3",
-                C4: "C4.mp3",
-                E4: "E4.mp3",
-                G4: "G4.mp3",
-                C5: "C5.mp3",
-                E5: "E5.mp3",
-                G5: "G5.mp3",
-                C6: "C6.mp3",
-            },
-            release: 1,
-            baseUrl: "https://tonejs.github.io/audio/salamander/",
-            onload: () => console.log("Piano loaded")
-        }).toDestination();
-
-        const synth = new Tone.PolySynth(Tone.Synth, {
-            oscillator: {
-                type: "sawtooth"
-            },
-            envelope: {
-                attack: 0.005,
-                decay: 0.1,
-                sustain: 0.3,
-                release: 2
-            }
-        }).toDestination();
-
-        const electric = new Tone.PolySynth(Tone.FMSynth, {
-            harmonicity: 3,
-            modulationIndex: 10,
-            oscillator: {
-                type: "sine"
-            },
-            envelope: {
-                attack: 0.01,
-                decay: 0.2,
-                sustain: 0.2,
-                release: 1
-            },
-            modulation: {
-                type: "square"
-            },
-            modulationEnvelope: {
-                attack: 0.5,
-                decay: 0,
-                sustain: 1,
-                release: 0.5
-            }
-        }).toDestination();
-
-        const instruments = {
-            piano: piano,
-            synth: synth,
-            electric: electric
-        };
-
-        let currentInstrument = piano;
-
+        
+        const audioContext = await optimizeAudioContext();
+        let currentInstrument = await initializeInstrument(audioContext, 'acoustic_grand_piano');
+        
         // アナライザーの設定
-        analyser = Tone.getContext().createAnalyser();
+        analyser = audioContext.createAnalyser();
         analyser.fftSize = 2048;
         dataArray = new Uint8Array(analyser.frequencyBinCount);
-        Object.values(instruments).forEach(inst => inst.connect(analyser));
-
+        
         // ビジュアライザーの開始
         drawVisualizer();
 
@@ -167,17 +108,31 @@ WebMidi.enable()
         const activeNotes = new Set();
 
         // 音源選択の処理
-        document.getElementById('soundType').addEventListener('change', (e) => {
-            const selectedInstrument = instruments[e.target.value];
-            if (selectedInstrument) {
+        document.getElementById('soundType').addEventListener('change', async (e) => {
+            const selectedInstrument = e.target.value;
+            try {
+                // ローディング表示
+                e.target.disabled = true;
+                e.target.style.opacity = '0.5';
+                
                 // アクティブな音を全て停止
                 activeNotes.forEach(note => {
-                    currentInstrument.triggerRelease(note, '+0');
+                    currentInstrument.stop();
                     updateKeyVisual(note, false);
                 });
                 activeNotes.clear();
                 
-                currentInstrument = selectedInstrument;
+                // 新しい音源を読み込む
+                currentInstrument = await initializeInstrument(audioContext, selectedInstrument);
+                currentInstrument.connect(analyser);
+                
+                // ローディング表示を解除
+                e.target.disabled = false;
+                e.target.style.opacity = '1';
+            } catch (error) {
+                console.error('Failed to change instrument:', error);
+                e.target.disabled = false;
+                e.target.style.opacity = '1';
             }
         });
 
@@ -188,7 +143,7 @@ WebMidi.enable()
             
             key.addEventListener('mousedown', () => {
                 if (!activeNotes.has(note)) {
-                    currentInstrument.triggerAttack(note, '+0');
+                    currentInstrument.play(note);
                     updateKeyVisual(note, true);
                     activeNotes.add(note);
                 }
@@ -196,7 +151,7 @@ WebMidi.enable()
 
             key.addEventListener('mouseup', () => {
                 if (activeNotes.has(note)) {
-                    currentInstrument.triggerRelease(note, '+0');
+                    currentInstrument.stop(note);
                     updateKeyVisual(note, false);
                     activeNotes.delete(note);
                 }
@@ -204,7 +159,7 @@ WebMidi.enable()
 
             key.addEventListener('mouseleave', () => {
                 if (activeNotes.has(note)) {
-                    currentInstrument.triggerRelease(note, '+0');
+                    currentInstrument.stop(note);
                     updateKeyVisual(note, false);
                     activeNotes.delete(note);
                 }
@@ -214,7 +169,7 @@ WebMidi.enable()
             key.addEventListener('touchstart', (e) => {
                 e.preventDefault();
                 if (!activeNotes.has(note)) {
-                    currentInstrument.triggerAttack(note, '+0');
+                    currentInstrument.play(note);
                     updateKeyVisual(note, true);
                     activeNotes.add(note);
                 }
@@ -223,7 +178,7 @@ WebMidi.enable()
             key.addEventListener('touchend', (e) => {
                 e.preventDefault();
                 if (activeNotes.has(note)) {
-                    currentInstrument.triggerRelease(note, '+0');
+                    currentInstrument.stop(note);
                     updateKeyVisual(note, false);
                     activeNotes.delete(note);
                 }
@@ -243,8 +198,7 @@ WebMidi.enable()
                 // Note ONイベントのリスナー
                 currentInput.addListener("noteon", (e) => {
                     const note = e.note.identifier;
-                    const velocity = e.note.velocity;
-                    currentInstrument.triggerAttack(note, '+0', velocity);
+                    currentInstrument.play(note, 0, { gain: e.note.velocity });
                     updateKeyVisual(note, true);
                     activeNotes.add(note);
                 });
@@ -252,7 +206,7 @@ WebMidi.enable()
                 // Note OFFイベントのリスナー
                 currentInput.addListener("noteoff", (e) => {
                     const note = e.note.identifier;
-                    currentInstrument.triggerRelease(note, '+0');
+                    currentInstrument.stop(note);
                     updateKeyVisual(note, false);
                     activeNotes.delete(note);
                 });
