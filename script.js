@@ -1,6 +1,3 @@
-import * as WebMidi from "webmidi";
-import * as Tone from "tone";
-
 // MIDIデバイスの選択肢を更新する関数
 function updateMIDIInputs() {
     const select = document.getElementById('midiInput');
