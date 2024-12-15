@@ -2,7 +2,7 @@
   "version": 2,
   "builds": [
     {
-      "src": "**/*",
+      "src": "*.{html,css,js}",
       "use": "@vercel/static"
     }
   ],
@@ -17,7 +17,7 @@
         "Access-Control-Allow-Headers": "Content-Type",
         "Cross-Origin-Opener-Policy": "same-origin",
         "Cross-Origin-Embedder-Policy": "require-corp",
-        "Cache-Control": "public, max-age=0, must-revalidate"
+        "Cache-Control": "no-cache, no-store, must-revalidate"
       }
     }
   ]
