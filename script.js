@@ -53,19 +53,45 @@ function updateMIDIInputs() {
     const select = document.getElementById('midiInput');
     select.innerHTML = '<option value="">MIDIデバイスを選択してください</option>';
     
-    if (WebMidi.inputs.length === 0) {
-        select.innerHTML += '<option value="" disabled>MIDIデバイスが見つかりません</option>';
-        console.log('No MIDI devices found. Available inputs:', WebMidi.inputs);
-        return;
+    // WebMIDI APIを直接使用してMIDIデバイスをチェック
+    if (navigator.requestMIDIAccess) {
+        navigator.requestMIDIAccess()
+            .then(access => {
+                console.log('MIDI Access granted:', access);
+                const inputs = Array.from(access.inputs.values());
+                console.log('Direct MIDI inputs:', inputs);
+                
+                if (inputs.length === 0) {
+                    select.innerHTML += '<option value="" disabled>MIDIデバイスが見つかりません</option>';
+                    console.log('No MIDI devices found via direct access');
+                    return;
+                }
+
+                inputs.forEach(input => {
+                    const option = document.createElement('option');
+                    option.value = input.id;
+                    option.textContent = input.name;
+                    select.appendChild(option);
+                    console.log('Found MIDI device (direct):', input.name, input.id);
+                });
+            })
+            .catch(error => {
+                console.error('Direct MIDI access error:', error);
+                select.innerHTML += '<option value="" disabled>MIDIアクセスエラー</option>';
+            });
     }
     
-    WebMidi.inputs.forEach(input => {
-        const option = document.createElement('option');
-        option.value = input.id;
-        option.textContent = input.name;
-        select.appendChild(option);
-        console.log('Found MIDI device:', input.name, input.id);
-    });
+    // WebMidi.jsのデバイス一覧も確認
+    if (WebMidi && WebMidi.inputs) {
+        console.log('WebMidi.js inputs:', WebMidi.inputs);
+        if (WebMidi.inputs.length === 0) {
+            console.log('No MIDI devices found via WebMidi.js');
+        }
+        
+        WebMidi.inputs.forEach(input => {
+            console.log('Found MIDI device (WebMidi.js):', input.name, input.id);
+        });
+    }
 }
 
 // オーディオコンテキストの初期化
@@ -211,27 +237,54 @@ function setupMIDIEvents(input) {
     
     console.log("Setting up MIDI listeners for:", input.name);
 
-    input.addListener("noteon", "all", (e) => {
-        const note = e.note.identifier;
-        const keyElement = document.querySelector(`[data-note="${note}"]`);
-        
-        if (!activeNotes.has(note)) {
-            playNote(note, e.note.velocity);
-            setKeyColor(keyElement, true);
-            activeNotes.add(note);
-        }
-    });
+    // WebMidi.jsのイベントリスナー
+    if (input.addListener) {
+        input.addListener("noteon", "all", (e) => {
+            const note = e.note.identifier;
+            const keyElement = document.querySelector(`[data-note="${note}"]`);
+            
+            if (!activeNotes.has(note)) {
+                playNote(note, e.note.velocity);
+                setKeyColor(keyElement, true);
+                activeNotes.add(note);
+            }
+        });
 
-    input.addListener("noteoff", "all", (e) => {
-        const note = e.note.identifier;
-        const keyElement = document.querySelector(`[data-note="${note}"]`);
-        
-        if (activeNotes.has(note)) {
-            stopNote(note);
-            setKeyColor(keyElement, false);
-            activeNotes.delete(note);
-        }
-    });
+        input.addListener("noteoff", "all", (e) => {
+            const note = e.note.identifier;
+            const keyElement = document.querySelector(`[data-note="${note}"]`);
+            
+            if (activeNotes.has(note)) {
+                stopNote(note);
+                setKeyColor(keyElement, false);
+                activeNotes.delete(note);
+            }
+        });
+    } 
+    // 直接のWeb MIDI APIイベントリスナー
+    else {
+        input.onmidimessage = (event) => {
+            const [command, note, velocity] = event.data;
+            const keyElement = document.querySelector(`[data-note="${note}"]`);
+
+            // Note On
+            if ((command & 0xf0) === 0x90 && velocity > 0) {
+                if (!activeNotes.has(note)) {
+                    playNote(note, velocity / 127);
+                    setKeyColor(keyElement, true);
+                    activeNotes.add(note);
+                }
+            }
+            // Note Off
+            else if ((command & 0xf0) === 0x80 || ((command & 0xf0) === 0x90 && velocity === 0)) {
+                if (activeNotes.has(note)) {
+                    stopNote(note);
+                    setKeyColor(keyElement, false);
+                    activeNotes.delete(note);
+                }
+            }
+        };
+    }
 }
 
 // MIDIデバイス選択の処理
@@ -241,7 +294,11 @@ function setupMIDIDeviceSelection() {
     midiSelect.addEventListener('change', async (e) => {
         try {
             if (currentInput) {
-                currentInput.removeListener();
+                if (currentInput.removeListener) {
+                    currentInput.removeListener();
+                } else if (currentInput.onmidimessage) {
+                    currentInput.onmidimessage = null;
+                }
             }
 
             const selectedId = e.target.value;
@@ -250,13 +307,22 @@ function setupMIDIDeviceSelection() {
                 return;
             }
 
+            // まずWebMidi.jsで試行
             currentInput = WebMidi.getInputById(selectedId);
+            
+            // WebMidi.jsで見つからない場合、直接のMIDIアクセスを試行
+            if (!currentInput) {
+                const midiAccess = await navigator.requestMIDIAccess();
+                currentInput = Array.from(midiAccess.inputs.values())
+                    .find(input => input.id === selectedId);
+            }
+
             if (!currentInput) {
                 throw new Error(`MIDI device with ID ${selectedId} not found`);
             }
 
             setupMIDIEvents(currentInput);
-            console.log("MIDI device setup completed");
+            console.log("MIDI device setup completed for:", currentInput.name);
 
         } catch (error) {
             console.error("Error setting up MIDI device:", error);
@@ -272,6 +338,11 @@ function setupMIDIDeviceSelection() {
 
 // セキュリティコンテキストの確認
 function checkSecurityContext() {
+    console.log('Security Context Check:');
+    console.log('- isSecureContext:', window.isSecureContext);
+    console.log('- protocol:', window.location.protocol);
+    console.log('- host:', window.location.host);
+    
     if (!window.isSecureContext) {
         console.error('Not running in a secure context');
         return false;
@@ -282,35 +353,38 @@ function checkSecurityContext() {
 // アプリケーションの初期化
 async function initializeApp() {
     try {
+        console.log('Initializing application...');
+        console.log('User Agent:', navigator.userAgent);
+        
         // セキュリティコンテキストの確認
         if (!checkSecurityContext()) {
             throw new Error('このアプリケーションはHTTPS環境で実行する必要があります。');
         }
 
-        // WebMIDIの初期化
+        // WebMIDIのサポート確認
+        if (!navigator.requestMIDIAccess) {
+            throw new Error('このブラウザはWeb MIDI APIをサポートしていません。');
+        }
+
+        // 直接のMIDIアクセスを試行
+        try {
+            const midiAccess = await navigator.requestMIDIAccess();
+            console.log('Direct MIDI access successful:', midiAccess);
+            
+            midiAccess.onstatechange = (e) => {
+                console.log('MIDI State Change:', e.port.name, e.port.state);
+                updateMIDIInputs();
+            };
+        } catch (midiError) {
+            console.error('Direct MIDI access failed:', midiError);
+        }
+
+        // WebMidi.jsの初期化
         await WebMidi.enable({ sysex: true }).catch(error => {
-            console.error('WebMIDI initialization error details:', error);
-            
-            let errorMessage = 'MIDIデバイスの初期化に失敗しました。以下をご確認ください：<br>';
-            errorMessage += '1. ブラウザがWebMIDI APIをサポートしているか<br>';
-            errorMessage += '2. MIDIデバイスが正しく接続されているか<br>';
-            errorMessage += '3. ブラウザのMIDIアクセス許可が与えられているか<br>';
-            
-            if (!window.isSecureContext) {
-                errorMessage += '4. サイトがHTTPS接続で実行されているか<br>';
-            }
-            
-            document.querySelector('.controls').insertAdjacentHTML('afterbegin',
-                `<div class="error-message" style="color: #ff4444; margin-bottom: 10px;">
-                    ${errorMessage}
-                </div>`
-            );
-            
-            throw error;
+            console.error('WebMidi.js initialization error:', error);
         });
         
-        console.log('WebMIDI enabled successfully');
-        console.log('Available MIDI inputs:', WebMidi.inputs);
+        console.log('WebMidi enabled:', WebMidi.enabled);
         
         // オーディオコンテキストの初期化
         await initializeAudioContext();
@@ -337,7 +411,15 @@ async function initializeApp() {
         
     } catch (error) {
         console.error('Initialization failed:', error);
-        alert('アプリケーションの初期化に失敗しました。ページを更新してもう一度お試しください。\n' + error.message);
+        const errorMessage = `アプリケーションの初期化に失敗しました。
+1. ブラウザがWeb MIDI APIをサポートしているか確認してください。
+2. MIDIデバイスが正しく接続されているか確認してください。
+3. ブラウザのMIDIアクセス許可が与えられているか確認してください。
+4. HTTPSで接続されているか確認してください。
+
+エラー詳細: ${error.message}`;
+        
+        alert(errorMessage);
     }
 }
 
