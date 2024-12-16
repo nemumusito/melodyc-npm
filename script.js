@@ -55,6 +55,7 @@ function updateMIDIInputs() {
     
     if (WebMidi.inputs.length === 0) {
         select.innerHTML += '<option value="" disabled>MIDIデバイスが見つかりません</option>';
+        console.log('No MIDI devices found. Available inputs:', WebMidi.inputs);
         return;
     }
     
@@ -63,6 +64,7 @@ function updateMIDIInputs() {
         option.value = input.id;
         option.textContent = input.name;
         select.appendChild(option);
+        console.log('Found MIDI device:', input.name, input.id);
     });
 }
 
@@ -268,20 +270,47 @@ function setupMIDIDeviceSelection() {
     updateMIDIInputs();
 }
 
+// セキュリティコンテキストの確認
+function checkSecurityContext() {
+    if (!window.isSecureContext) {
+        console.error('Not running in a secure context');
+        return false;
+    }
+    return true;
+}
+
 // アプリケーションの初期化
 async function initializeApp() {
     try {
+        // セキュリティコンテキストの確認
+        if (!checkSecurityContext()) {
+            throw new Error('このアプリケーションはHTTPS環境で実行する必要があります。');
+        }
+
         // WebMIDIの初期化
         await WebMidi.enable({ sysex: true }).catch(error => {
-            console.warn('WebMIDI initialization failed:', error);
+            console.error('WebMIDI initialization error details:', error);
+            
+            let errorMessage = 'MIDIデバイスの初期化に失敗しました。以下をご確認ください：<br>';
+            errorMessage += '1. ブラウザがWebMIDI APIをサポートしているか<br>';
+            errorMessage += '2. MIDIデバイスが正しく接続されているか<br>';
+            errorMessage += '3. ブラウザのMIDIアクセス許可が与えられているか<br>';
+            
+            if (!window.isSecureContext) {
+                errorMessage += '4. サイトがHTTPS接続で実行されているか<br>';
+            }
+            
             document.querySelector('.controls').insertAdjacentHTML('afterbegin',
-                '<div class="error-message" style="color: #ff4444; margin-bottom: 10px;">' +
-                'MIDIデバイスの初期化に失敗しました。以下をご確認ください：<br>' +
-                '1. ブラウザがWebMIDI APIをサポートしているか<br>' +
-                '2. MIDIデバイスが正しく接続されているか' +
-                '</div>'
+                `<div class="error-message" style="color: #ff4444; margin-bottom: 10px;">
+                    ${errorMessage}
+                </div>`
             );
+            
+            throw error;
         });
+        
+        console.log('WebMIDI enabled successfully');
+        console.log('Available MIDI inputs:', WebMidi.inputs);
         
         // オーディオコンテキストの初期化
         await initializeAudioContext();
@@ -308,7 +337,7 @@ async function initializeApp() {
         
     } catch (error) {
         console.error('Initialization failed:', error);
-        alert('アプリケーションの初期化に失敗しました。ページを更新してもう一度お試しください。');
+        alert('アプリケーションの初期化に失敗しました。ページを更新してもう一度お試しください。\n' + error.message);
     }
 }
 
