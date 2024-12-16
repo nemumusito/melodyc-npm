@@ -1,9 +1,9 @@
 // グローバル変数の定義
-let audioContext;
-let currentInstrument;
+let audioContext = null;
+let currentInstrument = null;
 let currentInput = null;
-let analyser;
-let dataArray;
+let analyser = null;
+let dataArray = null;
 const activeNotes = new Set();
 
 // オーディオビジュアライザーの設定
@@ -53,6 +53,11 @@ function updateMIDIInputs() {
     const select = document.getElementById('midiInput');
     select.innerHTML = '<option value="">MIDIデバイスを選択してください</option>';
     
+    if (WebMidi.inputs.length === 0) {
+        select.innerHTML += '<option value="" disabled>MIDIデバイスが見つかりません</option>';
+        return;
+    }
+    
     WebMidi.inputs.forEach(input => {
         const option = document.createElement('option');
         option.value = input.id;
@@ -61,156 +66,79 @@ function updateMIDIInputs() {
     });
 }
 
-// オーディオコンテキストの最適化設定
-async function optimizeAudioContext() {
-    const ctx = new (window.AudioContext || window.webkitAudioContext)();
-    
-    if (ctx.state === 'suspended') {
-        const resumeAudio = async () => {
-            await ctx.resume();
-            console.log('AudioContext resumed');
-            document.removeEventListener('click', resumeAudio);
-            document.removeEventListener('touchstart', resumeAudio);
-        };
-        
-        document.addEventListener('click', resumeAudio);
-        document.addEventListener('touchstart', resumeAudio);
+// オーディオコンテキストの初期化
+async function initializeAudioContext() {
+    if (!audioContext) {
+        audioContext = new (window.AudioContext || window.webkitAudioContext)();
     }
-    
-    return ctx;
+
+    if (audioContext.state === 'suspended') {
+        try {
+            await audioContext.resume();
+            console.log('AudioContext resumed successfully');
+        } catch (error) {
+            console.error('Failed to resume AudioContext:', error);
+            throw error;
+        }
+    }
+
+    if (!analyser) {
+        analyser = audioContext.createAnalyser();
+        analyser.fftSize = 2048;
+        dataArray = new Uint8Array(analyser.frequencyBinCount);
+        analyser.connect(audioContext.destination);
+    }
+
+    return audioContext;
 }
 
 // 音源の初期化
-async function initializeInstrument(audioContext, instrumentName) {
+async function initializeInstrument() {
     try {
-        console.log(`Starting initialization for instrument: ${instrumentName}`);
-        console.log('AudioContext state:', audioContext.state);
+        console.log('Initializing piano...');
         
-        // 既存の音源を切断
-        if (currentInstrument) {
-            console.log('Disconnecting old instrument');
-            try {
-                currentInstrument.disconnect();
-                await new Promise(resolve => setTimeout(resolve, 300)); // 切断の完了を待機時間を増加
-            } catch (error) {
-                console.warn('Error disconnecting old instrument:', error);
-												}
-								}
+        // オーディオコンテキストの初期化を確認
+        await initializeAudioContext();
 
-        // オーディオコンテキストの状態確認
-        if (audioContext.state !== 'running') {
-            console.log('Resuming AudioContext...');
-            await audioContext.resume();
-            await new Promise(resolve => setTimeout(resolve, 100));
-            if (audioContext.state !== 'running') {
-                throw new Error('オーディオコンテキストの開始に失敗しました');
-												}
-								}
-
-        // 新しい音源をロード
-        console.log('Creating new instrument...');
-        const soundfontOptions = {
+        // グランドピアノの音源をロード
+        currentInstrument = await Soundfont.instrument(audioContext, 'acoustic_grand_piano', {
             soundfont: 'MusyngKite',
             format: 'mp3',
-            nameToUrl: (name, soundfont, format) => {
-                const fixedName = name.replace(/_/g, '-');
-																const url = `https://gleitz.github.io/midi-js-soundfonts/${soundfont}/${fixedName}-${format}.js`;
-                console.log('Loading soundfont from:', url);
-                return url;
-            }
-        };
+            gain: 2.0
+        });
 
-        const instrument = await Soundfont.instrument(audioContext, instrumentName, soundfontOptions)
-            .catch(error => {
-																console.error('Soundfont loading error:', error);
-																throw new Error(`音源のロードに失敗しました: ${error.message}`);
-												});
-
-								if (!instrument) {
-												throw new Error('音源の初期化に失敗しました');
-								}
-
-								console.log('Instrument created, setting up audio routing...');
-
-								// 音源の出力をアナライザーに接続
-								try {
-												await new Promise(resolve => setTimeout(resolve, 200)); // 初期化完了を待機
-												instrument.connect(analyser);
-												console.log('Audio routing to analyzer completed');
-												
-												// 接続確認のためのテスト音を再生（無音）
-												const testNote = await instrument.play('C4', 0, { gain: 0.01, duration: 0.1 });
-												if (!testNote) {
-																throw new Error('テスト音の生成に失敗しました');
-												}
-												console.log('Audio routing verified with test note');
-								} catch (error) {
-												console.error('Error connecting to analyzer:', error);
-												try {
-																console.log('Attempting direct audio routing...');
-																instrument.disconnect();
-																await new Promise(resolve => setTimeout(resolve, 200));
-																instrument.connect(audioContext.destination);
-																const testNote = await instrument.play('C4', 0, { gain: 0.01, duration: 0.1 });
-																if (!testNote) {
-																				throw new Error('テスト音の生成に失敗しました');
-																}
-																console.log('Direct audio routing successful');
-												} catch (secondError) {
-																console.error('Failed to establish any audio routing:', secondError);
-																throw new Error('音源の接続に失敗しました。オーディオシステムを確認してください。');
-												}
-								}
-
-								// 最終確認
-								try {
-												const audioTest = await instrument.play('C4', 0, { gain: 0 });
-												await audioTest.stop();
-												console.log('Final audio test passed');
-								} catch (error) {
-												console.error('Final audio test failed:', error);
-												throw new Error('音源の動作確認に失敗しました');
-								}
-
-								console.log(`Instrument ${instrumentName} loaded and connected successfully`);
-								return instrument;
-				} catch (error) {
-								console.error(`Failed to initialize instrument: ${instrumentName}`, error);
-								console.error('Detailed error:', error.message);
-								throw new Error(`音源の初期化に失敗しました: ${error.message}`);
-				}
+        // アナライザーに接続
+        currentInstrument.connect(analyser);
+        
+        console.log('Piano initialized successfully');
+        return true;
+    } catch (error) {
+        console.error('Failed to initialize piano:', error);
+        return false;
+    }
 }
 
 // 音を再生する共通関数
-function playNote(note, velocity = 1.5) {
-    if (currentInstrument && note) {
-        try {
-            console.log(`Playing note: ${note} with velocity: ${velocity}`);
-            return currentInstrument.play(note, 0, { gain: velocity });
-        } catch (error) {
-            console.error(`Error playing note ${note}:`, error);
-        }
+async function playNote(note, velocity = 0.7) {
+    if (!currentInstrument || !note) return;
+    
+    try {
+        console.log(`Playing note: ${note} with velocity: ${velocity}`);
+        await currentInstrument.play(note, 0, { gain: velocity });
+    } catch (error) {
+        console.error(`Error playing note ${note}:`, error);
     }
 }
 
 // 音を停止する共通関数
 function stopNote(note) {
-    if (currentInstrument && note) {
-        try {
-            console.log(`Stopping note: ${note}`);
-            currentInstrument.stop(note);
-        } catch (error) {
-            console.error(`Error stopping note ${note}:`, error);
-        }
-    }
-}
-
-// キーの色をリセットする関数
-function resetKeyColor(keyElement) {
-    if (keyElement && keyElement.dataset.originalColor) {
-        keyElement.style.removeProperty('background');
-        keyElement.style.backgroundColor = keyElement.dataset.originalColor;
-        keyElement.style.transition = 'background-color 0.1s ease';
+    if (!currentInstrument || !note) return;
+    
+    try {
+        console.log(`Stopping note: ${note}`);
+        currentInstrument.stop();
+    } catch (error) {
+        console.error(`Error stopping note ${note}:`, error);
     }
 }
 
@@ -218,17 +146,8 @@ function resetKeyColor(keyElement) {
 function setKeyColor(keyElement, isPressed) {
     if (!keyElement) return;
     
-    if (!keyElement.dataset.originalColor) {
-        keyElement.dataset.originalColor = keyElement.classList.contains('black') ? 'black' : 'white';
-    }
-    
-    keyElement.style.transition = 'background-color 0.1s ease';
-    
-    if (isPressed) {
-        keyElement.style.background = `rgba(124, 181, 236, 0.8)`;
-    } else {
-        resetKeyColor(keyElement);
-    }
+    const isBlack = keyElement.classList.contains('black');
+    keyElement.style.backgroundColor = isPressed ? '#7cb5ec' : (isBlack ? '#000' : '#fff');
 }
 
 // キーボードイベントのセットアップ
@@ -236,12 +155,11 @@ function setupKeyboardEvents() {
     const keys = document.querySelectorAll('.key');
     keys.forEach(key => {
         const note = key.dataset.note;
-        key.dataset.originalColor = key.classList.contains('black') ? 'black' : 'white';
 
         // マウスイベント
         key.addEventListener('mousedown', (event) => {
             if (!activeNotes.has(note)) {
-                playNote(note, 1.5);
+                playNote(note);
                 setKeyColor(event.target, true);
                 activeNotes.add(note);
             }
@@ -262,7 +180,7 @@ function setupKeyboardEvents() {
         key.addEventListener('touchstart', (e) => {
             e.preventDefault();
             if (!activeNotes.has(note)) {
-                playNote(note, 1.5);
+                playNote(note);
                 setKeyColor(e.target, true);
                 activeNotes.add(note);
             }
@@ -287,10 +205,11 @@ function setupKeyboardEvents() {
 
 // MIDIイベントのセットアップ
 function setupMIDIEvents(input) {
+    if (!input) return;
+    
     console.log("Setting up MIDI listeners for:", input.name);
 
     input.addListener("noteon", "all", (e) => {
-        console.log("MIDI Note ON:", e.note.identifier, "Velocity:", e.note.velocity);
         const note = e.note.identifier;
         const keyElement = document.querySelector(`[data-note="${note}"]`);
         
@@ -311,184 +230,16 @@ function setupMIDIEvents(input) {
             activeNotes.delete(note);
         }
     });
-
-    // すべてのノートを停止する関数
-    function stopAllNotes() {
-        activeNotes.forEach(note => {
-            stopNote(note);
-            const keyElement = document.querySelector(`[data-note="${note}"]`);
-            setKeyColor(keyElement, false);
-        });
-        activeNotes.clear();
-    }
-
-    // 接続が切れた時やエラー時に全ての音を停止
-    input.addListener("disconnect", () => {
-        console.log("MIDI device disconnected");
-        stopAllNotes();
-    });
-    
-    input.addListener("error", (err) => {
-        console.error("MIDI device error:", err);
-        stopAllNotes();
-    });
-}
-
-// 音源選択の処理
-function setupInstrumentSelection() {
-    const soundTypeSelect = document.getElementById('soundType');
-    let isChanging = false;
-    let retryCount = 0;
-    const MAX_RETRIES = 2;
-
-    soundTypeSelect.addEventListener('change', async (e) => {
-        if (isChanging) {
-            console.log('音源切り替え処理が進行中です');
-            return;
-        }
-
-        const selectedInstrument = e.target.value;
-        const loadingIndicator = e.target;
-        const originalValue = soundTypeSelect.value;
-        
-        try {
-            isChanging = true;
-            retryCount = 0;
-
-            // UI要素を無効化
-            loadingIndicator.disabled = true;
-            loadingIndicator.style.opacity = '0.5';
-            soundTypeSelect.style.cursor = 'wait';
-            
-            console.log(`Starting instrument change to: ${selectedInstrument}`);
-            
-            // 現在の音を全て停止
-            console.log('Stopping all active notes...');
-            activeNotes.forEach(note => {
-                stopNote(note);
-                const keyElement = document.querySelector(`[data-note="${note}"]`);
-                if (keyElement) {
-                    resetKeyColor(keyElement);
-                }
-            });
-            activeNotes.clear();
-
-            // 現在の音源を切断
-            if (currentInstrument) {
-                try {
-                    currentInstrument.disconnect();
-                    await new Promise(resolve => setTimeout(resolve, 500));
-                } catch (error) {
-                    console.warn('Error disconnecting current instrument:', error);
-                }
-                currentInstrument = null; // 明示的に解放
-            }
-
-            // オーディオコンテキストの状態をリセット
-            if (audioContext) {
-                try {
-                    await audioContext.close();
-                    await new Promise(resolve => setTimeout(resolve, 300));
-                } catch (error) {
-                    console.warn('Error closing AudioContext:', error);
-                }
-            }
-
-            // 新しいオーディオコンテキストを作成
-            audioContext = new (window.AudioContext || window.webkitAudioContext)();
-            analyser = audioContext.createAnalyser();
-            analyser.fftSize = 2048;
-            dataArray = new Uint8Array(analyser.frequencyBinCount);
-            analyser.connect(audioContext.destination);
-
-            // 新しい音源を初期化（リトライ機能付き）
-            let success = false;
-            while (retryCount < MAX_RETRIES && !success) {
-                try {
-                    console.log(`Attempt ${retryCount + 1} to initialize new instrument...`);
-                    
-                    // 新しい音源をロード
-                    const newInstrument = await Soundfont.instrument(audioContext, selectedInstrument, {
-                        soundfont: 'MusyngKite',
-                        format: 'mp3',
-                        nameToUrl: (name, soundfont, format) => {
-                            const fixedName = name.replace(/_/g, '-');
-                            const url = `https://gleitz.github.io/midi-js-soundfonts/${soundfont}/${fixedName}-${format}.js`;
-                            console.log('Loading soundfont from:', url);
-                            return url;
-                        }
-                    });
-
-                    // アナライザーへの接続
-                    await new Promise(resolve => setTimeout(resolve, 300));
-                    newInstrument.connect(analyser);
-                    
-                    // テスト音を再生して確認
-                    const testNote = await newInstrument.play('C4', 0, { gain: 0.01, duration: 0.1 });
-                    await new Promise(resolve => setTimeout(resolve, 100));
-                    
-                    if (testNote) {
-                        currentInstrument = newInstrument;
-                        success = true;
-                        console.log(`Successfully changed to ${selectedInstrument}`);
-                    }
-
-                } catch (error) {
-                    console.error(`Attempt ${retryCount + 1} failed:`, error);
-                    retryCount++;
-                    if (retryCount >= MAX_RETRIES) {
-                        throw new Error(`音源の初期化に失敗しました: ${error.message}`);
-                    }
-                    await new Promise(resolve => setTimeout(resolve, 1000));
-                }
-            }
-
-            if (!success) {
-                throw new Error('音源の切り替えに失敗しました');
-            }
-
-        } catch (error) {
-            console.error(`Instrument change failed:`, error);
-            soundTypeSelect.value = originalValue;
-            
-            let errorMessage = '音源の切り替えに失敗しました。\n';
-            errorMessage += `エラー: ${error.message}\n\n`;
-            errorMessage += 'お手数ですが、以下をお試しください：\n';
-            errorMessage += '1. ページを更新する\n';
-            errorMessage += '2. ブラウザのオーディオ設定を確認する\n';
-            errorMessage += '3. 別の音源を選択してみる';
-            
-            alert(errorMessage);
-            
-        } finally {
-            // UI要素を再有効化
-            loadingIndicator.disabled = false;
-            loadingIndicator.style.opacity = '1';
-            soundTypeSelect.style.cursor = '';
-            isChanging = false;
-        }
-    });
 }
 
 // MIDIデバイス選択の処理
 function setupMIDIDeviceSelection() {
     const midiSelect = document.getElementById('midiInput');
-
-    // MIDIデバイスの選択変更時の処理
+    
     midiSelect.addEventListener('change', async (e) => {
         try {
-            // 既存のリスナーを削除
             if (currentInput) {
-                console.log("Removing listeners from previous input:", currentInput.name);
-                try {
-                    currentInput.removeListener("noteon", "all");
-                    currentInput.removeListener("noteoff", "all");
-                    currentInput.removeListener("disconnect");
-                    currentInput.removeListener("error");
-                } catch (err) {
-                    console.warn("Error removing listeners:", err);
-                }
-                currentInput = null;
+                currentInput.removeListener();
             }
 
             const selectedId = e.target.value;
@@ -497,257 +248,71 @@ function setupMIDIDeviceSelection() {
                 return;
             }
 
-            // 新しいMIDIデバイスを設定
             currentInput = WebMidi.getInputById(selectedId);
             if (!currentInput) {
                 throw new Error(`MIDI device with ID ${selectedId} not found`);
             }
 
-            console.log("Selected MIDI device:", {
-                name: currentInput.name,
-                manufacturer: currentInput.manufacturer,
-                state: currentInput.state,
-                connection: currentInput.connection
-            });
-
-            // オーディオコンテキストの状態確認
-            if (audioContext.state === 'suspended') {
-                console.log("Resuming AudioContext...");
-                await audioContext.resume();
-            }
-
-            // MIDIイベントリスナーを設定
             setupMIDIEvents(currentInput);
             console.log("MIDI device setup completed");
 
         } catch (error) {
             console.error("Error setting up MIDI device:", error);
             alert('MIDIデバイスの設定に失敗しました。\n' + error.message);
-            midiSelect.value = ''; // 選択をリセット
+            midiSelect.value = '';
             currentInput = null;
         }
     });
 
-    // 初期状態のMIDIデバイスリストを更新
+    // 初期MIDIデバイスリストの更新
     updateMIDIInputs();
 }
 
 // アプリケーションの初期化
 async function initializeApp() {
     try {
-        // セキュリティチェックとホスト情報の取得
-        const isSecureContext = window.isSecureContext;
-        const protocol = window.location.protocol;
-        const hostname = window.location.hostname;
-								const isLocalhost = ['localhost', '127.0.0.1'].includes(hostname);
-        const isLocalNetwork = hostname.startsWith('192.168.') || hostname.startsWith('10.') || hostname.startsWith('172.');
-        
-        console.log("Environment Context:", {
-            isSecure: isSecureContext,
-            protocol,
-            hostname,
-            isLocalhost,
-            isLocalNetwork
+        // WebMIDIの初期化
+        await WebMidi.enable({ sysex: true }).catch(error => {
+            console.warn('WebMIDI initialization failed:', error);
+            document.querySelector('.controls').insertAdjacentHTML('afterbegin',
+                '<div class="error-message" style="color: #ff4444; margin-bottom: 10px;">' +
+                'MIDIデバイスの初期化に失敗しました。以下をご確認ください：<br>' +
+                '1. ブラウザがWebMIDI APIをサポートしているか<br>' +
+                '2. MIDIデバイスが正しく接続されているか' +
+                '</div>'
+            );
         });
-
-        // WebMIDIの初期化（リトライロジック付き）
-        let retryCount = 0;
-        const maxRetries = 3;
         
-        while (retryCount < maxRetries) {
-            try {
-                // ローカル環境での特別な処理
-                if (isLocalhost || isLocalNetwork) {
-                    console.log("Local development environment detected");
-                    if (!isSecureContext && protocol !== 'https:') {
-                        console.warn("Local non-secure context, attempting MIDI access anyway");
-                    }
-                }
-                // 本番環境でのセキュリティチェック
-                else if (!isSecureContext && protocol !== 'https:') {
-                    console.warn("Production non-secure context detected. MIDI access will be restricted.");
-                    document.querySelector('.controls').insertAdjacentHTML('afterbegin',
-                        '<div class="error-message" style="color: #ff4444; margin-bottom: 10px;">' +
-                        'セキュアな接続（HTTPS）でないため、MIDIデバイスへのアクセスが制限されます。<br>' +
-                        'HTTPSでアクセスしてください。' +
-                        '</div>'
-                    );
-                }
-
-                // WebMIDI初期化オプション
-                const enableOptions = {
-                    sysex: true,
-                    software: true,
-                    callback: error => {
-                        if (error) {
-                            console.error("WebMidi callback error:", error);
-                            throw error;
-                        }
-                    }
-                };
-
-                // ローカル環境での特別な初期化処理
-                if (isLocalhost || isLocalNetwork) {
-                    try {
-                        await WebMidi.enable(enableOptions);
-                        console.log("WebMidi enabled successfully in local environment!");
-                    } catch (localError) {
-                        console.warn("Local MIDI initialization failed, trying alternative method:", localError);
-                        // 代替の初期化方法を試行
-                        await new Promise((resolve, reject) => {
-                            navigator.requestMIDIAccess({ sysex: true })
-                                .then(midiAccess => {
-                                    console.log("Alternative MIDI access granted");
-                                    resolve();
-                                })
-                                .catch(err => {
-                                    console.error("Alternative MIDI access failed:", err);
-                                    reject(err);
-                                });
-                        });
-                    }
-                } else {
-                    // 本番環境での通常の初期化
-                    await WebMidi.enable(enableOptions);
-                    console.log("WebMidi enabled successfully in production environment!");
-                }
-
-                // MIDI デバイスの確認
-                if (WebMidi.inputs.length > 0) {
-                    console.log("Available MIDI devices:", WebMidi.inputs.map(input => ({
-                        name: input.name,
-                        manufacturer: input.manufacturer,
-                        state: input.state,
-                        connection: input.connection
-                    })));
-                } else {
-                    console.log("No MIDI devices found");
-                    document.querySelector('.controls').insertAdjacentHTML('afterbegin',
-                        '<div class="info-message" style="color: #ffaa00; margin-bottom: 10px;">' +
-                        'MIDIデバイスが検出されませんでした。<br>' +
-                        'デバイスを接続してページを更新してください。' +
-                        '</div>'
-                    );
-                }
-                break;
-            } catch (error) {
-                console.warn(`WebMIDI initialization attempt ${retryCount + 1} failed:`, error);
-                retryCount++;
-                if (retryCount === maxRetries) {
-                    console.error("WebMIDI initialization failed after all attempts");
-                    document.querySelector('.controls').insertAdjacentHTML('afterbegin',
-                        '<div class="error-message" style="color: #ff4444; margin-bottom: 10px;">' +
-                        'MIDIデバイスの初期化に失敗しました。以下をご確認ください：<br>' +
-                        '1. ブラウザがWebMIDI APIをサポートしているか<br>' +
-                        '2. MIDIデバイスが正しく接続されているか<br>' +
-                        '3. セキュアな接続（HTTPS）を使用しているか' +
-                        '</div>'
-                    );
-                }
-                await new Promise(resolve => setTimeout(resolve, 1000));
-            }
-        }
-
-        // オーディオコンテキストの初期化（リトライロジック付き）
-        retryCount = 0;
-        while (retryCount < maxRetries) {
-            try {
-                audioContext = new (window.AudioContext || window.webkitAudioContext)();
-                console.log("AudioContext created:", audioContext.state);
-                break;
-            } catch (error) {
-                console.warn(`AudioContext initialization attempt ${retryCount + 1} failed:`, error);
-                retryCount++;
-                if (retryCount === maxRetries) {
-                    throw new Error("オーディオシステムの初期化に失敗しました");
-                }
-                await new Promise(resolve => setTimeout(resolve, 1000));
-            }
-        }
+        // オーディオコンテキストの初期化
+        await initializeAudioContext();
         
-        // ���ーザーインタラクションを待つ
-        if (audioContext.state === 'suspended') {
-            console.log('Waiting for user interaction...');
-            const resumeAudioContext = async () => {
-                await audioContext.resume();
-                console.log('AudioContext resumed:', audioContext.state);
-                document.removeEventListener('click', resumeAudioContext);
-                document.removeEventListener('touchstart', resumeAudioContext);
-            };
-            document.addEventListener('click', resumeAudioContext);
-            document.addEventListener('touchstart', resumeAudioContext);
-        }
-        
-        // オーディオグラフの設定
-        analyser = audioContext.createAnalyser();
-        analyser.fftSize = 2048;
-        dataArray = new Uint8Array(analyser.frequencyBinCount);
-        analyser.connect(audioContext.destination);
-        
-        // Soundfontの初期化を試行（リトライロジック付き）
-        console.log("Loading initial instrument...");
-        retryCount = 0;
-        while (retryCount < maxRetries) {
-            try {
-                currentInstrument = await Soundfont.instrument(audioContext, 'acoustic_grand_piano', {
-                    soundfont: 'MusyngKite',
-                    format: 'mp3',
-                    nameToUrl: (name, soundfont, format) => {
-                        const fixedName = name.replace(/_/g, '-');
-                        return `https://gleitz.github.io/midi-js-soundfonts/${soundfont}/${fixedName}-${format}.js`;
-                    }
-                });
-
-                // アナライザーの初期化
-                analyser = audioContext.createAnalyser();
-                analyser.fftSize = 2048;
-                dataArray = new Uint8Array(analyser.frequencyBinCount);
-                analyser.connect(audioContext.destination);
-
-                // 音源をアナライザーに接続
-                currentInstrument.connect(analyser);
-                console.log("Initial instrument loaded and connected successfully");
-                
-                // 無音のテスト音を鳴らして接続を確認
-                const testNote = await currentInstrument.play('C4', 0, { gain: 0.01, duration: 0.1 });
-                if (testNote) {
-                    console.log("Audio routing verified");
-                    break;
-                }
-            } catch (error) {
-                console.warn(`Soundfont initialization attempt ${retryCount + 1} failed:`, error);
-                retryCount++;
-                if (retryCount === maxRetries) {
-                    console.error("Failed to load initial instrument after all attempts:", error);
-                    // エラーメッセージを表示するが、続行を許可
-                    const errorMessage =
-                        '音源の読み込みに失敗しました。\n' +
-                        'お手数ですが、以下をお試しください：\n' +
-                        '1. ページを更新する\n' +
-                        '2. 別のブラウザで試す\n' +
-                        '3. インターネット接続を確認する';
-                    alert(errorMessage);
-                    break;
-                }
-                await new Promise(resolve => setTimeout(resolve, 1000));
-            }
+        // グランドピアノの初期化
+        const success = await initializeInstrument();
+        if (!success) {
+            throw new Error('Failed to initialize piano');
         }
         
         // 各種セットアップ
         setupKeyboardEvents();
-        setupInstrumentSelection();
         setupMIDIDeviceSelection();
         drawVisualizer();
-
+        
+        // ユーザーインタラクションを待つ
+        document.addEventListener('click', async () => {
+            if (audioContext && audioContext.state === 'suspended') {
+                await audioContext.resume();
+            }
+        }, { once: true });
+        
+        console.log('Application initialized successfully');
+        
     } catch (error) {
-        console.error("Initialization failed:", error);
+        console.error('Initialization failed:', error);
         alert('アプリケーションの初期化に失敗しました。ページを更新してもう一度お試しください。');
-        throw error;
     }
 }
 
 // アプリケーションの起動
-initializeApp().catch(err => {
-    console.error("Application startup failed:", err);
-    document.body.innerHTML += '<p class="error">アプリケーションの起動に失敗しました。</p>';
+document.addEventListener('DOMContentLoaded', () => {
+    initializeApp().catch(console.error);
 });
