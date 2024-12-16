@@ -16,9 +16,8 @@
         "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
         "Access-Control-Allow-Headers": "Content-Type, midi",
         "Cross-Origin-Opener-Policy": "same-origin",
-        "Cross-Origin-Embedder-Policy": "require-corp",
+        "Cross-Origin-Embedder-Policy": "credentialless",
         "Cross-Origin-Resource-Policy": "cross-origin",
-        "Cross-Origin-Isolation": "require-corp",
         "Feature-Policy": "midi *",
         "Cache-Control": "no-cache, no-store, must-revalidate"
       }
