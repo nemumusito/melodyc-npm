@@ -11,14 +11,15 @@
       "src": "/(.*)",
       "dest": "/$1",
       "headers": {
-        "Permissions-Policy": "midi=*",
+        "Permissions-Policy": "midi=*, autoplay=*, cross-origin-isolated=*",
         "Access-Control-Allow-Origin": "*",
-        "Access-Control-Allow-Methods": "GET, OPTIONS",
-        "Access-Control-Allow-Headers": "Content-Type",
+        "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+        "Access-Control-Allow-Headers": "Content-Type, midi",
         "Cross-Origin-Opener-Policy": "same-origin",
         "Cross-Origin-Embedder-Policy": "require-corp",
-        "Cross-Origin-Resource-Policy": "same-origin",
+        "Cross-Origin-Resource-Policy": "cross-origin",
         "Cross-Origin-Isolation": "require-corp",
+        "Feature-Policy": "midi *",
         "Cache-Control": "no-cache, no-store, must-revalidate"
       }
     }
