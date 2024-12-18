@@ -57,7 +57,7 @@ async function updateMIDIInputs() {
     try {
         // グローバルなMIDIアクセスがない場合は再取得
         if (!midiAccessGlobal) {
-            midiAccessGlobal = await navigator.requestMIDIAccess({ sysex: true });
+            midiAccessGlobal = await navigator.requestMIDIAccess({ sysex: false });
             console.log('New MIDI access obtained:', midiAccessGlobal);
         }
 
